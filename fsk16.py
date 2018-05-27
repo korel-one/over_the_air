@@ -9,8 +9,9 @@ def str2bits(str):
 
 class SoundCommunication2:
 
-    def __init__(self, FS, symRate, msgSymLen, sync):
+    def __init__(self, FS, msgSymLen, sync):
         assert len(sync) % 4 == 0
+        symRate= 50 #corresponding to 50 frequency granularity in fft of each symbol 
         self.symRate= symRate
         self.FS = FS
         #samples per second
@@ -24,8 +25,13 @@ class SoundCommunication2:
         self.tunenum = 16
         self.freqbot = 1000
         self.freqtop = 2000
-        #TODO set frequencies exactly
-        self.pulsefreq = np.linspace(self.freqbot, self.freqtop, self.tunenum + 2)[1:-1] #discard frequencies
+
+        #set optimal frequencies
+        freqs = fftfreq(self.symsamp, 1/self.FS)
+        mask = np.logical_and(freqs >= self.freqbot, freqs < self.freqtop)
+        legal_freqs = freqs[mask]
+        self.pulsefreq = legal_freqs[2:-2] #discard those closest to noise
+        assert self.pulsefreq.size == self.tunenum, "pulsefreq.size == %d" % self.pulsefreq.size
         self.fr_spacing = self.pulsefreq[1] - self.pulsefreq[0]
         #too close to edges
         self.modpulse = dict()
@@ -82,11 +88,12 @@ class SoundCommunication2:
         res = np.zeros(self.symlen, dtype=np.intp)
         frqcies = fftfreq(self.symsamp, 1/self.FS)
         for i in range(self.symlen):
-            Fwindow = fft(W[i*self.symsamp:(i+1)*self.symsamp])
+            win = W[i*self.symsamp:(i+1)*self.symsamp]
+            Fwindow = fft(win)
             freq_power = np.empty(self.pulsefreq.shape)
             for sym_idx, freq in enumerate(self.pulsefreq):
-                freq_idx = np.argmin(np.abs(frqcies - freq)) #closest frequency
-                assert abs(frqcies[freq_idx] - freq) < self.fr_spacing/3, "frequency not close enough to tune"
+                freq_idx = np.abs(np.abs(frqcies) - freq) < 0.01 #closest frequency
+                assert np.sum(freq_idx.astype(np.int)) == 2
                 freq_power[sym_idx] = np.sum(np.abs(Fwindow[freq_idx])**2)
             res[i] = np.argmax(freq_power)
 

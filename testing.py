@@ -65,15 +65,22 @@ class Tester:
         movW = np.interp(np.arange(W.size) + leftover, np.arange(W.size), W)
         return np.hstack((np.zeros(intshift), movW))
 
-    def diff(self, a, b):
+    def diff(self, a, b, chunk_len=1):
+        def chunks(msg):
+            chunk =''
+            for b in msg:
+                chunk += b
+                if len(chunk) == chunk_len:
+                    yield chunk
+                    chunk = ''
         assert len(a) == len(b), "Length is not the same"
         res = ''
         err = 0
-        for i, (l, r) in enumerate(zip(self._comm.chunks(a), self._comm.chunks(b))):
+        for i, (l, r) in enumerate(zip(chunks(a), chunks(b))):
             if l == r:
                 res += l
             else:
-                res += 'X'*len(l)
+                res += 'X'*chunk_len
                 err+=1
         return res, err/(i+1)
 
@@ -82,3 +89,6 @@ class Tester:
         Wshift = self.addRandomShift(R, lowerBoundShift, upperBoundShift)
         W = self.addBandpassNoise(Wshift, sigma_pass, sigma_out)
         return W
+
+    def pad(self, W, padding=0.5):
+        return np.hstack((np.zeros(int(self._comm.FS*padding)), W, np.zeros(int(self._comm.FS*padding))))
