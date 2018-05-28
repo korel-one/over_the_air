@@ -63,17 +63,20 @@ class SoundCommunication:
         if corr[start_sync] < 0:
             W = -W
 
-        start_msg = start_sync + self.synclen*self.symsamp
-        end_msg = start_msg + self.symlen*self.symsamp
-        W = W[start_msg:end_msg]
-        if W.size < end_msg - start_msg:
-            #padd to avoid slow processing in fft
-            W = np.hstack((W, np.zeros(end_msg - start_msg - W.size)))
         res = np.zeros(self.symlen, dtype=np.intp)
-        frqcies = fftfreq(self.symsamp, 1/self.FS)
+
+        start_samp = start_sync + self.synclen*self.symsamp
         for i in range(self.symlen):
-            win = W[i*self.symsamp:(i+1)*self.symsamp]
-            c = np.correlate(win, self.pulse[1])
-            res[i] = 1 if c > 0 else 0
+            jitter_max = int(self.FS*(1/self.symRate)/8)
+            win = W[max(0, start_samp - jitter_max):min(self.symsamp*self.symlen, start_samp  + self.symsamp)]
+            win_corr = np.correlate(win, self.pulse[1])
+            max_idx = np.argmax(np.abs(win_corr))
+
+            if abs(max_idx - jitter_max) > 10:
+                start_samp += self.symsamp + max_idx - jitter_max
+            else:
+                start_samp += self.symsamp
+
+            res[i] = 1 if win_corr[max_idx] > 0 else 0
 
         return ''.join(map(str, res))

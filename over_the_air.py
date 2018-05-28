@@ -1,5 +1,7 @@
 import sounddevice as sd
 import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fftpack import fft, ifft, fftfreq
 
 def str2bits(str):
     res = bin(int.from_bytes(str.encode('ascii'), 'big'))[2:]
@@ -7,56 +9,71 @@ def str2bits(str):
 
 class SoundCommunication:
 
-    def __init__(self, FS, pulseLength, messageBitLength):
+    def __init__(self, FS, symRate, msgSymLen, sync):
+        self.symRate= symRate
         self.FS = FS
-        self.pulseLength = pulseLength
-        self.pulse = {
-                '0': np.sin(self.create_t(self.pulseLength) * 2*np.pi * 1659.9994994994995),
-                '1': np.sin(self.create_t(self.pulseLength) * 2*np.pi * 1279)
-        }
+        #samples per second
+        self.symsamp = np.int(FS/symRate) + np.int(FS/symRate)%2
+        self.symlen = msgSymLen
+        self.synclen = len(sync)
+        self.T = self.create_t(1/symRate, self.symsamp)
+        shaping = np.empty(self.symsamp)
+        shaping[:self.symsamp//2] = np.hstack((np.linspace(0, 1, self.symsamp//16), np.ones(self.symsamp//2 - self.symsamp//16)))
+        shaping[self.symsamp//2:] = shaping[:self.symsamp//2][::-1]
+
+        self.freqbot = 1000
+        self.freqtop = 2000
+
+        self.pulse = np.zeros((2, self.symsamp))
+        self.pulse[0] = - shaping*np.sin(self.T * 2 * np.pi * 1500)
+        self.pulse[1] =   shaping*np.sin(self.T * 2 * np.pi * 1500)
+
+        self.sync = sync
         # normalize both pulses to same power
-        self.pulse['1'] = self.pulse['1']*np.sqrt(np.sum(self.pulse['0']**2) / np.sum(self.pulse['1']**2))
-        synT = self.create_t(1)
 
-        self.synchro = self.send('0000000011111111', add_synchro = False)
-        self.bitlen = messageBitLength
+    def create_t(self, length_seconds, samples):
+        return np.linspace(0, length_seconds, samples)
 
-    def create_t(self, length_seconds):
-        return np.linspace(0, length_seconds, int(self.FS*length_seconds))
+    def send(self, binstream):
+        total_len = self.synclen + self.symlen
+        S = np.zeros(self.symsamp*total_len)
+        msg = self.sync + binstream
 
-    def send(self, binstream, add_synchro = True):
-        #assert len(binstream) == self.bitlen
-        SigLen = self.pulse['0'].size
-        sync_size = self.synchro.size if add_synchro else 0
-        S = np.empty(len(binstream)*SigLen + sync_size)
-        #prepend synchronization at beginning
-        if add_synchro:
-            S[:sync_size] = self.synchro
+        for i, bit in enumerate(msg):
+            S[i*self.symsamp:(i+1)*self.symsamp]\
+                        += self.pulse[int(bit, 2)]
 
-        c = 0
-        for b in binstream:
-            #for every bit, set its respective pulse
-            S[c*SigLen + sync_size:(c+1)*SigLen + sync_size] = self.pulse[b]
-            c += 1
         return S
 
+
+    def _correlate(self, x, y):
+        """periodic correlation"""
+        if len(y) < len(x):
+            yold = y
+            y = np.zeros(x.shape)
+            y[:yold.size] = yold
+        return ifft(fft(x) * fft(y).conj()).real
+
     def decode(self, W):
-        corr = np.correlate(W[:self.synchro.size*10], self.synchro, 'valid')
-        start_syn = np.argmax(np.abs(corr)) # take the absolute value because the microphone
-                                            # could inverse + and -, then invert the signal
-                                            # accordingly
-        print(start_syn/self.FS, corr[start_syn])
-        if corr[start_syn] < 0:
+        correlating_sync = self.send('')
+        corr = self._correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
+
+        start_sync = np.argmax(np.abs(corr)) # take the absolute value because the microphone
+                                            # could inverse + and -
+        if corr[start_sync] < 0:
             W = -W
 
-        start = start_syn + self.synchro.size
-        result = ''
-        rlen = int((W.size)/(self.pulseLength*self.FS))
-        for i in range(self.bitlen):
-            symStart = start + int(i*self.pulseLength*self.FS)
-            symEnd = symStart + int(self.pulseLength*self.FS)
-            S0corr = np.sum(W[symStart:symEnd] * self.pulse['0'])
-            S1corr = np.sum(W[symStart:symEnd] * self.pulse['1'])
-            print(S0corr, S1corr, '0' if S0corr > S1corr else '1')
-            result += '0' if S0corr > S1corr else '1'
-        return result
+        start_msg = start_sync + self.synclen*self.symsamp
+        end_msg = start_msg + self.symlen*self.symsamp
+        W = W[start_msg:end_msg]
+        if W.size < end_msg - start_msg:
+            #padd to avoid slow processing in fft
+            W = np.hstack((W, np.zeros(end_msg - start_msg - W.size)))
+        res = np.zeros(self.symlen, dtype=np.intp)
+        frqcies = fftfreq(self.symsamp, 1/self.FS)
+        for i in range(self.symlen):
+            win = W[i*self.symsamp:(i+1)*self.symsamp]
+            c = np.correlate(win, self.pulse[1])
+            res[i] = 1 if c > 0 else 0
+
+        return ''.join(map(str, res))
