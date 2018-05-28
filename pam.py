@@ -69,15 +69,17 @@ class SoundCommunication:
 
         start_samp = start_sync + self.synclen*self.symsamp
         for i in range(self.symlen):
-            jitter_max = int(self.FS*(1/self.symRate)/8)
-            win = W[max(0, start_samp - jitter_max):min(self.symsamp*self.symlen, start_samp  + self.symsamp)]
+            jitter_max = 0#int(self.FS*(1/self.symRate)/8)
+            #win = W[max(0, start_samp - jitter_max):min(self.symsamp*self.symlen, start_samp  + self.symsamp)]
+            win = W[start_samp:start_samp  + self.symsamp]
             win_corr = np.correlate(win, self.pulse[1])
             max_idx = np.argmax(np.abs(win_corr))
 
-            if abs(max_idx - jitter_max) > 10:
-                start_samp += self.symsamp + max_idx - jitter_max
-            else:
-                start_samp += self.symsamp
+            #if abs(max_idx - jitter_max) > 10:
+            #    start_samp += self.symsamp + max_idx - jitter_max
+            #else:
+            #    start_samp += self.symsamp
+            start_samp += self.symsamp
 
             res[i] = 1 if win_corr[max_idx] > 0 else 0
 
