@@ -9,7 +9,9 @@ def str2bits(str):
 
 class SoundCommunication:
 
-    def __init__(self, FS, symRate, msgSymLen, sync):
+    def __init__(self, FS, symRate, msgSymLen, sync = None):
+        if sync: print("specified sync discarded")
+        sync = '1100001111100011011101101101011001111100100100001000010100111000001000110011110011110110101110100110'
         self.symRate= symRate
         self.FS = FS
         #samples per second
