@@ -28,14 +28,16 @@ class SoundCommunication:
         self.freqtop = freqtop
 
         self.pulse = np.zeros((2, self.symsamp))
-        self.pulse[0] = - shaping*np.sin(self.T * 2 * np.pi * (freqtop + freqbot)/2)
-        self.pulse[1] =   shaping*np.sin(self.T * 2 * np.pi * (freqtop + freqbot)/2)
 
         self.sync = sync
         # normalize both pulses to same power
 
     def create_t(self, length_seconds, samples):
         return np.linspace(0, length_seconds, samples)
+
+    def corr_signal(self):
+        sinc = self.send('')
+        return sinc[:self.synclen*self.symsamp]
 
     def send(self, binstream):
         total_len = self.synclen + self.symlen
@@ -68,10 +70,18 @@ class SoundCommunication:
         return irfft(fW)
 
     def decode(self, W, debug=False):
+        W = np.copy(W)
         #W = self.bandpass_filter(W, self.freqbot, self.freqtop)
-        correlating_sync = self.send('')
+        correlating_sync = self.corr_signal()
+        corr = np.correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
+
+        #correlating_sync = np.zeros(self.synclen * self.symsamp)
+        #for i, bit in enumerate(self.sync):
+        #    correlating_sync[i*self.symsamp:(i+1)*self.symsamp]\
+        #                += self.shaping * (-1 if bit == '0' else 1)
         corr = self._correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
         W *= np.sin(np.arange(W.size)/self.FS * 2 * np.pi * (self.freqtop + self.freqbot)/2)
+
 
         start_sync = np.argmax(np.abs(corr)) # take the absolute value because the microphone
                                             # could inverse + and -
