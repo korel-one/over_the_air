@@ -24,6 +24,7 @@ class SoundCommunication:
         shaping = np.empty(self.symsamp)
         shaping[:self.symsamp//2] = np.hstack((np.linspace(0, 1, self.symsamp//8), np.ones(self.symsamp//2 - self.symsamp//8)))
         shaping[self.symsamp//2:] = shaping[:self.symsamp//2][::-1]
+        self.shaping = shaping
 
         self.freqbot = freqbot
         self.freqtop = freqtop
@@ -47,7 +48,8 @@ class SoundCommunication:
 
         for i, bit in enumerate(msg):
             S[i*self.symsamp:(i+1)*self.symsamp]\
-                        += self.pulse[int(bit, 2)]
+                        += self.shaping * (-1 if bit == '0' else 1)
+        S *= np.sin(np.arange(S.size)/self.FS * 2 * np.pi * (self.freqtop + self.freqbot)/2)
 
         return S
 
@@ -67,10 +69,11 @@ class SoundCommunication:
         fW[mask] = 0.
         return irfft(fW)
 
-    def decode(self, W):
-        W = self.bandpass_filter(W, self.freqbot, self.freqtop)
+    def decode(self, W, debug=False):
+        #W = self.bandpass_filter(W, self.freqbot, self.freqtop)
         correlating_sync = self.send('')
         corr = self._correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
+        W *= np.sin(np.arange(W.size)/self.FS * 2 * np.pi * (self.freqtop + self.freqbot)/2)
 
         start_sync = np.argmax(np.abs(corr)) # take the absolute value because the microphone
                                             # could inverse + and -
@@ -84,7 +87,11 @@ class SoundCommunication:
             jitter_max = 0#int(self.FS*(1/self.symRate)/8)
             #win = W[max(0, start_samp - jitter_max):min(self.symsamp*self.symlen, start_samp  + self.symsamp)]
             win = W[start_samp:start_samp  + self.symsamp]
-            win_corr = np.correlate(win, self.pulse[1])
+            if debug:
+                eye_win = W[start_samp - self.symsamp//2:start_samp + self.symsamp + self.symsamp//2]
+                eye_corr = np.correlate(eye_win, self.shaping)
+                plt.plot(eye_corr)
+            win_corr = np.correlate(win, self.shaping)
             max_idx = np.argmax(np.abs(win_corr))
 
             #if abs(max_idx - jitter_max) > 10:
@@ -94,5 +101,6 @@ class SoundCommunication:
             start_samp += self.symsamp
 
             res[i] = 1 if win_corr[max_idx] > 0 else 0
+        if debug: plt.show()
 
         return ''.join(map(str, res))
