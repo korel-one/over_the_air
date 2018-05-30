@@ -21,9 +21,7 @@ class SoundCommunication:
         self.symlen = msgSymLen
         self.synclen = len(sync)
         self.T = self.create_t(1/symRate, self.symsamp)
-        shaping = np.empty(self.symsamp)
-        shaping[:self.symsamp//2] = np.hstack((np.linspace(0, 1, self.symsamp//8), np.ones(self.symsamp//2 - self.symsamp//8)))
-        shaping[self.symsamp//2:] = shaping[:self.symsamp//2][::-1]
+        shaping = np.exp(-(((np.arange(self.symsamp) - self.symsamp//2)/(self.symsamp/5))**2))
         self.shaping = shaping
 
         self.freqbot = freqbot
@@ -42,9 +40,9 @@ class SoundCommunication:
     def send(self, binstream):
         total_len = self.synclen + self.symlen
         S = np.zeros(self.symsamp*total_len)
-        msg = self.sync + binstream
         assert len(binstream) <= self.symlen
         binstream = binstream + '0'*(self.symlen - len(binstream))
+        msg = self.sync + binstream
 
         for i, bit in enumerate(msg):
             S[i*self.symsamp:(i+1)*self.symsamp]\
