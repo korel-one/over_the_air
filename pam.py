@@ -36,10 +36,18 @@ class SoundCommunication:
         return np.linspace(0, length_seconds, samples)
 
     def corr_signal(self):
-        sinc = self.send('')
+        sinc = self.send(b'')
         return sinc[:self.synclen*self.symsamp]
 
-    def send(self, binstream):
+    def send(self, msg):
+        assert type(msg) == bytes or type(msg) == bytearray
+        binstream = ''
+        for byte in msg:
+            for i in range(8):
+                #convert into string of bits
+                bit = str(((byte << i) & 0b10000000) >> 7)
+                assert bit in {'0','1'}
+                binstream += bit
         total_len = self.synclen + self.symlen
         S = np.zeros(self.symsamp*total_len)
         assert len(binstream) <= self.symlen
@@ -73,12 +81,7 @@ class SoundCommunication:
         W = np.copy(W)
         #W = self.bandpass_filter(W, self.freqbot, self.freqtop)
         correlating_sync = self.corr_signal()
-        corr = np.correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
 
-        #correlating_sync = np.zeros(self.synclen * self.symsamp)
-        #for i, bit in enumerate(self.sync):
-        #    correlating_sync[i*self.symsamp:(i+1)*self.symsamp]\
-        #                += self.shaping * (-1 if bit == '0' else 1)
         corr = self._correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
         W *= np.sin(np.arange(W.size)/self.FS * 2 * np.pi * (self.freqtop + self.freqbot)/2)
 
@@ -111,4 +114,9 @@ class SoundCommunication:
             res[i] = 1 if win_corr[max_idx] > 0 else 0
         if debug: plt.show()
 
-        return ''.join(map(str, res))
+        binstream = ''.join(map(str, res))
+        assert len(binstream) % 8 == 0
+        r = bytearray()
+        for i in range(0, len(binstream), 8):
+            r += int(binstream[i:i+8], 2).to_bytes(1, 'big')
+        return r

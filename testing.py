@@ -65,7 +65,15 @@ class Tester:
         movW = np.interp(np.arange(W.size) + leftover, np.arange(W.size), W)
         return np.hstack((np.zeros(intshift), movW))
 
-    def diff(self, a, b, chunk_len=1):
+    def diff(self, bytes_a, bytes_b, chunk_len=1):
+        assert type(bytes_a) in {bytes, bytearray}
+        assert type(bytes_b) in {bytes, bytearray}
+        def to_bitstring(bytes):
+            res =''
+            for byte in bytes:
+                for i in range(8)[::-1]:
+                    res += str((byte >> i) & 1)
+            return res
         def chunks(msg):
             chunk =''
             for b in msg:
@@ -73,7 +81,12 @@ class Tester:
                 if len(chunk) == chunk_len:
                     yield chunk
                     chunk = ''
+
+        a = to_bitstring(bytes_a)
+        b = to_bitstring(bytes_b)
+
         assert len(a) == len(b), "Length is not the same"
+
         res = ''
         err = 0
         for i, (l, r) in enumerate(zip(chunks(a), chunks(b))):
@@ -82,7 +95,7 @@ class Tester:
             else:
                 res += 'X'*chunk_len
                 err+=1
-        return res, err/(i+1)
+        return res, err/(i+1), err
 
     def sendWithNoiseShift(self, r, sigma_pass, sigma_out, lowerBoundShift = 0., upperBoundShift = 1.):
         R = self._comm.send(r)
