@@ -82,7 +82,7 @@ class SoundCommunication:
         #W = self.bandpass_filter(W, self.freqbot, self.freqtop)
         correlating_sync = self.corr_signal()
 
-        corr = self._correlate(W[:(self.symlen + self.synclen) * self.symsamp], correlating_sync)
+        corr = np.correlate(W[:4*self.FS], correlating_sync)
         W *= np.sin(np.arange(W.size)/self.FS * 2 * np.pi * (self.freqtop + self.freqbot)/2)
 
 
@@ -98,6 +98,7 @@ class SoundCommunication:
             jitter_max = 0#int(self.FS*(1/self.symRate)/8)
             #win = W[max(0, start_samp - jitter_max):min(self.symsamp*self.symlen, start_samp  + self.symsamp)]
             win = W[start_samp:start_samp  + self.symsamp]
+            assert win.size == self.symsamp
             if debug:
                 eye_win = W[start_samp - self.symsamp//2:start_samp + self.symsamp + self.symsamp//2]
                 eye_corr = np.correlate(eye_win, self.shaping)
