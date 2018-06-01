@@ -36,8 +36,11 @@ class SoundCommunication:
         return np.linspace(0, length_seconds, samples)
 
     def corr_signal(self):
-        sinc = self.send(b'')
-        return sinc[:self.synclen*self.symsamp]
+        sinc = np.zeros(self.synclen * self.symsamp)
+        for i, bit in enumerate(self.sync):
+            sinc[i*self.symsamp:(i+1)*self.symsamp]\
+                        += self.shaping * (-1 if bit == '0' else 1)
+        return sinc
 
     def send(self, msg):
         assert type(msg) == bytes or type(msg) == bytearray
@@ -82,8 +85,8 @@ class SoundCommunication:
         #W = self.bandpass_filter(W, self.freqbot, self.freqtop)
         correlating_sync = self.corr_signal()
 
-        corr = np.correlate(W[:4*self.FS], correlating_sync)
         W *= np.sin(np.arange(W.size)/self.FS * 2 * np.pi * (self.freqtop + self.freqbot)/2)
+        corr = np.correlate(W[:correlating_sync.size + 6*self.FS], correlating_sync)
 
 
         start_sync = np.argmax(np.abs(corr)) # take the absolute value because the microphone
